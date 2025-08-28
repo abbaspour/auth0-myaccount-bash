@@ -139,7 +139,8 @@ if [[ -f $STORE ]]; then
     #exit 1
 fi
 
-go run attestation.go --rp "${RP_ID}" --challenge "${CHALLENGE}" --username "${USER_NAME}" --userid "${USER_ID}" --key "${PRIVATE_KEY_FILE}" > "${STORE}"
+"${DIR}/attestation.sh" --rp "${RP_ID}" --challenge "${CHALLENGE}" --username "${USER_NAME}" --userid "${USER_ID}" --key "${PRIVATE_KEY_FILE}" > "${STORE}"
+#go run attestation.go --rp "${RP_ID}" --challenge "${CHALLENGE}" --username "${USER_NAME}" --userid "${USER_ID}" --key "${PRIVATE_KEY_FILE}" > "${STORE}"
 
 declare ATTESTATION_OBJECT CLIENT_DATA_JSON CREDENTIAL_ID
 
