@@ -13,7 +13,7 @@ readonly DIR
 
 function usage() {
   cat <<END >&2
-USAGE: $0 [-e env] [-t tenant] [-d domain] [-c client_id] [-x client_secret] [-r realm] [-u username] [-o org] [-v|-h]
+USAGE: $0 [-e env] [-t tenant] [-d domain] [-c client_id] [-x client_secret] [-r realm] [-u username] [-o id] [-v|-h]
         -e file        # .env file location (default cwd)
         -t tenant      # Auth0 tenant@region
         -d domain      # Auth0 custom domain
@@ -22,7 +22,7 @@ USAGE: $0 [-e env] [-t tenant] [-d domain] [-c client_id] [-x client_secret] [-r
         -r realm       # Auth0 database connection name, should be passkey enabled. default is Username-Password-Authentication
         -u username    # user identifier (email, phone_number, username)
         -k file        # private key file
-        -o organization # optional: organization
+        -o id          # optional: organization id
         -h|?           # usage
         -v             # verbose
 
@@ -35,6 +35,7 @@ END
 # shellcheck source="${DIR}/.env"
 [[ -f "${DIR}/.env" ]] && source "${DIR}/.env"
 
+declare opt_verbose=''
 declare AUTH0_DOMAIN="${AUTH0_DOMAIN:-}"
 declare CLIENT_ID="${CLIENT_ID:-}"
 declare REALM="${REALM:-Username-Password-Authentication}"
@@ -52,7 +53,7 @@ while getopts "e:t:d:c:r:u:k:o:hv?" opt; do
   u) EMAIL=${OPTARG} ;;
   k) PRIVATE_KEY_FILE=${OPTARG} ;;
   o) organization="$OPTARG" ;;
-  v) set -x ;;
+  v) opt_verbose=1;; # set -x ;;
   h | ?) usage 0 ;;
   *) usage 1 ;;
   esac
@@ -86,13 +87,16 @@ readonly CHALLENGE_BODY=$(
     + ( if ($organization | length) > 0 then { organization: $organization } else {} end )
     '
 )
-#echo "${CHALLENGE_BODY}"
+
+[[ -n "${opt_verbose}" ]] && {
+  echo "Calling https://$AUTH0_DOMAIN/passkey/challenge"
+  echo "${CHALLENGE_BODY}"
+}
 
 SIGNUP_RESPONSE=$(curl -s -H "Content-Type: application/json" "https://$AUTH0_DOMAIN/passkey/challenge" \
-    -d '{
-        "client_id": "'"$CLIENT_ID"'",
-        "realm": "'"$REALM"'"
-    }')
+  -d "${CHALLENGE_BODY}")
+
+[[ -n "${opt_verbose}" ]] && echo "${SIGNUP_RESPONSE}"
 
 CHALLENGE=$(echo "$SIGNUP_RESPONSE" | jq -r '.authn_params_public_key.challenge // empty')
 SESSION_ID=$(echo "$SIGNUP_RESPONSE" | jq -r '.auth_session // empty')
@@ -112,6 +116,10 @@ ASSERTION_RESPONSE=$("${DIR}/assertion.sh" --challenge "${CHALLENGE}" --username
 ATTESTATION_OBJECT=$(echo "${ASSERTION_RESPONSE}" | jq -r .response.authenticatorData)
 CLIENT_DATA_JSON=$(echo "${ASSERTION_RESPONSE}" | jq -r .response.clientDataJSON)
 SIGNATURE=$(echo "${ASSERTION_RESPONSE}" | jq -r .response.signature)
+
+[[ -n "${opt_verbose}" ]] && {
+  echo "Calling https://$AUTH0_DOMAIN/oauth/token"
+}
 
 AUTH_RESPONSE=$(curl -s -X POST "https://$AUTH0_DOMAIN/oauth/token" \
     -H "Content-Type: application/json" \
@@ -136,6 +144,9 @@ AUTH_RESPONSE=$(curl -s -X POST "https://$AUTH0_DOMAIN/oauth/token" \
         }
     }')
 readonly AUTH_RESPONSE
+
+[[ -n "${opt_verbose}" ]] && echo "${AUTH_RESPONSE}"
+
 
 if jq -e . >/dev/null 2>&1 <<< "${AUTH_RESPONSE}"; then
   ID_TOKEN=$(jq -r '.id_token // empty' <<< "${AUTH_RESPONSE}")
