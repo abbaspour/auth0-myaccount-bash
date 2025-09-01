@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:auth0.com)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Bash(./*.sh:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

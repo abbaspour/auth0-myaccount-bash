@@ -2,12 +2,12 @@
 
 ###############################################################################
 # Author: Amin Abbaspour
-# Date: 2025-08-25
+# Date: 2025-09-01
 # License: LGPL 2.1 (https://github.com/abbaspour/auth0-myaccout-bash/blob/master/LICENSE)
 #
-# Description: Get a list of authentication methods
+# Description: Get a list of factors
 # Reference:
-# - https://auth0.com/docs/api/myaccount/authentication-methods/get-authentication-methods
+# - https://auth0.com/docs/api/myaccount/factors/get-factors
 ###############################################################################
 
 set -euo pipefail
@@ -52,7 +52,7 @@ done
 [[ -z "${token:-}" ]] && { echo >&2 "Error: access_token is required. Provide with -a or env var."; usage 2; }
 
 declare -r AVAILABLE_SCOPES=$(jq -Rr 'split(".") | .[1] | @base64d | fromjson | .scope' <<< "${token}")
-declare -r EXPECTED_SCOPE="read:me:authentication_methods"
+declare -r EXPECTED_SCOPE="read:me:factors"
 [[ " $AVAILABLE_SCOPES " == *" $EXPECTED_SCOPE "* ]] || {
   echo >&2 "ERROR: Insufficient scope in Access Token. Expected: '$EXPECTED_SCOPE', Available: '$AVAILABLE_SCOPES'"
   exit 1
@@ -65,13 +65,11 @@ declare -r iss=$(jq -Rr 'split(".") | .[1] | @base64d | fromjson | .iss // empty
 # Trim trailing slash from iss if present
 declare host="${iss%/}"
 
-  # Perform request
-declare url="${host}/me/v1/authentication-methods"
+# Perform request
+declare url="${host}/me/v1/factors"
 
 [[ -n "${opt_verbose}" ]] && echo "Calling ${url}"
 
 curl ${curl_verbose} --url "$url" \
   -H "Accept: application/json" \
   -H "Authorization: Bearer $token" | jq .
-
-

@@ -20,11 +20,12 @@ readonly DIR=$(dirname "${BASH_SOURCE[0]}")
 
 function usage() {
   cat <<END >&2
-USAGE: $0 [-e env] [-a access_token] [-m type] [-c connection] [-h|-v]
+USAGE: $0 [-e env] [-a access_token] [-m type] [-c connection] [-o organization] [-h|-v]
         -e file        # .env file location (default cwd)
         -a token       # MyAccount access_token
         -m type        # authentication method type (default: passkey)
         -c connection  # optional: connection to use for enrollment
+        -o organization # optional: organization to use for enrollment
         -k file        # private key file
         -h|?           # usage
         -v             # verbose
@@ -32,6 +33,7 @@ USAGE: $0 [-e env] [-a access_token] [-m type] [-c connection] [-h|-v]
 eg,
      $0 -a eyJ... -m passkey
      $0 -a eyJ... -m passkey -c Username-Password-Authentication
+     $0 -a eyJ... -m passkey -o org_12345
 END
   exit $1
 }
@@ -43,15 +45,17 @@ declare curl_verbose='-s'
 declare token="${access_token:-}"
 declare method_type="${type:-passkey}"
 declare connection="${connection:-}"
+declare organization="${organization:-}"
 declare PRIVATE_KEY_FILE="private-key.pem"
 
 # shellcheck disable=SC1090
-while getopts "e:a:m:c:k:hv?" opt; do
+while getopts "e:a:m:c:o:k:hv?" opt; do
   case ${opt} in
     e) source "${OPTARG}" ;;
     a) token="$OPTARG" ;;
     m) method_type="$OPTARG" ;;
     c) connection="$OPTARG" ;;
+    o) organization="$OPTARG" ;;
     k) PRIVATE_KEY_FILE=${OPTARG} ;;
     v) opt_verbose=1; curl_verbose='-s';;
     h|?) usage 0 ;;
@@ -88,9 +92,11 @@ readonly BODY=$(
   jq -n \
     --arg type "${method_type}" \
     --arg connection "${connection:-}" \
+    --arg organization "${organization:-}" \
     '
     { type: $type }
     + ( if ($connection | length) > 0 then { connection: $connection } else {} end )
+    + ( if ($organization | length) > 0 then { organization: $organization } else {} end )
     '
 )
 
