@@ -19,7 +19,7 @@ readonly DIR=$(dirname "${BASH_SOURCE[0]}")
 
 function usage() {
   cat <<END >&2
-USAGE: $0 [-e env] [-t tenant] [-d domain] [-a access_token] [-c connection] [-S state] [-r redirect_uri] [-s scope] [-p param] [-A access_type] [-h|-v]
+USAGE: $0 [-e env] [-t tenant] [-d domain] [-a access_token] [-c connection] [-S state] [-r redirect_uri] [-s scope] [-p param] [-A access_type] [-C] [-h|-v]
         -e file        # .env file location (default cwd)
         -t tenant      # Auth0 tenant@region (optional; host is derived from access token iss)
         -d domain      # Auth0 custom domain (optional; host is derived from access token iss)
@@ -30,6 +30,7 @@ USAGE: $0 [-e env] [-t tenant] [-d domain] [-a access_token] [-c connection] [-S
         -s scope       # Provider scopes (default: "openid profile")
         -p param       # Optional: authorization_params.param (omit if not provided)
         -A access_type # Optional: authorization_params.access_type (omit if not provided)
+        -C             # Copy final_url to clipboard
         -h|?           # usage
         -v             # verbose
 
@@ -48,6 +49,7 @@ END
 
 # Defaults
 declare opt_verbose=''
+declare opt_clipboard=''
 declare curl_verbose='-s'
 
 # Common parameters
@@ -57,14 +59,14 @@ declare AUTH0_DOMAIN="${AUTH0_DOMAIN:-}"
 
 # Command-specific parameters
 declare connection=""
-declare state=""
+declare state="my-state"
 declare redirect_uri=""
 declare scope="openid profile"
 declare auth_param=""
-declare access_type=""
+declare access_type="offline"
 
 # shellcheck disable=SC1090
-while getopts "e:t:d:a:c:S:r:s:p:A:hv?" opt; do
+while getopts "e:t:d:a:c:S:r:s:p:A:Chv?" opt; do
   case ${opt} in
     e) source "${OPTARG}" ;;
     t) : ;; # accepted but not used (host comes from iss)
@@ -76,6 +78,7 @@ while getopts "e:t:d:a:c:S:r:s:p:A:hv?" opt; do
     s) scope="${OPTARG}" ;;
     p) auth_param="${OPTARG}" ;;
     A) access_type="${OPTARG}" ;;
+    C) opt_clipboard=1 ;;
     v) opt_verbose=1; curl_verbose='-s' ;;
     h|?) usage 0 ;;
     *) usage 1 ;;
@@ -133,13 +136,69 @@ readonly BODY=$(
 readonly url="${host}/me/v1/connected-accounts/connect"
 
 [[ -n "${opt_verbose}" ]] && {
-  echo "Calling ${url}"
-  echo "Request Body:"; echo "${BODY}" | jq .
+  echo "Calling ${url}" >&2
+  echo "Request Body:" >&2
+  echo "${BODY}" | jq . >&2
 }
 
-curl ${curl_verbose} --url "${url}" \
+response=$(curl ${curl_verbose} --url "${url}" \
   -X POST \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${token}" \
-  -d "${BODY}" | jq .
+  -d "${BODY}" \
+  -w '\n%{http_code}')
+
+http_code=$(tail -n1 <<< "${response}")
+body=$(sed '$d' <<< "${response}")
+
+if [[ -n "${opt_verbose}" ]]; then
+  echo "HTTP status: ${http_code}" >&2
+  if jq -e . >/dev/null 2>&1 <<< "${body}"; then
+    echo "Response Body:" >&2
+    echo "${body}" | jq . >&2
+  else
+    echo "Non-JSON response body:" >&2
+    echo "${body}" >&2
+  fi
+fi
+
+if ! [[ "${http_code}" =~ ^2 ]]; then
+  echo >&2 "ERROR: HTTP ${http_code} from ${url}"
+  if jq -e . >/dev/null 2>&1 <<< "${body}"; then
+    echo "${body}" | jq . >&2
+  else
+    echo "${body}" >&2
+  fi
+  exit 1
+fi
+
+connect_uri=$(jq -r '.connect_uri // empty' <<< "${body}")
+ticket=$(jq -r '.connect_params.ticket // empty' <<< "${body}")
+auth_session=$(jq -r '.auth_session // empty' <<< "${body}")
+
+if [[ -z "${connect_uri}" || -z "${ticket}" ]]; then
+  echo >&2 "ERROR: Missing connect_uri or ticket in response."
+  echo "${body}" | jq . >&2 || echo "${body}" >&2
+  exit 1
+fi
+
+encoded_ticket=$(jq -rn --arg t "${ticket}" '$t|@uri')
+sep='?'
+[[ "${connect_uri}" == *\?* ]] && sep='&'
+final_url="${connect_uri}${sep}ticket=${encoded_ticket}"
+
+if [[ -n "${opt_clipboard}" ]]; then
+  if command -v pbcopy >/dev/null; then
+    echo "${final_url}" | pbcopy
+    echo "Final URL copied to clipboard" >&2
+  elif command -v xclip >/dev/null; then
+    echo "${final_url}" | xclip -selection clipboard
+    echo "Final URL copied to clipboard" >&2
+  else
+    echo >&2 "Warning: No clipboard utility found (pbcopy or xclip)"
+  fi
+fi
+
+echo "auth_session: ${auth_session}"
+echo "${final_url}"
