@@ -123,11 +123,7 @@ readonly BODY=$(
       connection: $connection,
       state: $state,
       redirect_uri: $redirect_uri,
-      authorization_params:
-            ( { scope: $scope  }
-              + ( if ($param|length)>0 then { param: $param } else {} end )
-              + ( if ($access_type|length)>0 then { access_type: $access_type } else {} end )
-            )
+      scopes: [ $scope | splits("\\s+") ]
     }
     '
 )
